@@ -1,137 +1,93 @@
-USE WORLD_LAYOFFS; -- Practicing to clean a data from duplicates
-SELECT * FROM LAYOFFS; -- Imported table then created 1st table LAYOFFS
-CREATE TABLE LAYOFFS_STAGING   -- Created 2nd table where we will be cleaning the duplicates, 1st table data is always for backup if we made mistake in 2nd table then to recover the loss.
-LIKE LAYOFFS;
-SELECT * FROM LAYOFFS_STAGING;
+USE WORLD_LAYOFFS;
 
-INSERT INTO LAYOFFS_STAGING
+-- Step 1: Import and backup the data
 SELECT * FROM LAYOFFS;
 
-WITH DUPLICATE_CTE AS -- Here we created a column named ROW_NUM where we will be checking for duplicates in it if row_num > 1 then it has duplicates else no duplicates.
-(
-SELECT *, -- For the first time we learned the concept of WITH clause that is used to create CTE's basically its like a FUNCTION in coding languages
-ROW_NUMBER() OVER(PARTITION BY COMPANY, LOCATION, INDUSTRY, TOTAL_LAID_OFF, PERCENTAGE_LAID_OFF, `DATE`, 
-STAGE, COUNTRY, FUNDS_RAISED_MILLIONS) AS ROW_NUM
-FROM LAYOFFS_STAGING)
-SELECT *
-FROM DUPLICATE_CTE
-WHERE ROW_NUM > 1; -- With clause end 
+-- Step 2: Create a backup table for cleaning
+CREATE TABLE LAYOFFS_STAGING LIKE LAYOFFS;
+INSERT INTO LAYOFFS_STAGING SELECT * FROM LAYOFFS;
 
-SELECT * FROM LAYOFFS_STAGING
-WHERE COMPANY = '&OPEN'; -- Checked whether WITH clause worked perfectly or not.
+-- Step 3: Identify duplicates using CTE and ROW_NUMBER()
+WITH DUPLICATE_CTE AS (
+    SELECT *, 
+    ROW_NUMBER() OVER(PARTITION BY COMPANY, LOCATION, INDUSTRY, TOTAL_LAID_OFF, PERCENTAGE_LAID_OFF, `DATE`, 
+    STAGE, COUNTRY, FUNDS_RAISED_MILLIONS) AS ROW_NUM
+    FROM LAYOFFS_STAGING
+)
+SELECT * FROM DUPLICATE_CTE WHERE ROW_NUM > 1;
 
-DELETE FROM DUPLICATE_CTE -- Tried to delete from CTE but didn't work becuase data from CTE tables cannot be updated or deleted.
-WHERE ROW_NUM > 1;
+-- Step 4: Verify duplicate detection
+SELECT * FROM LAYOFFS_STAGING WHERE COMPANY = '&OPEN';
 
-CREATE TABLE `layoffs_staging2` ( -- So now we have found duplicate rows its time to delete them, so we created a DITTO table like Layoffs_staging named layoffs_staging2.
-  `company` text,
-  `location` text,
-  `industry` text,
-  `total_laid_off` int DEFAULT NULL,
-  `percentage_laid_off` text,
-  `date` text,
-  `stage` text,
-  `country` text,
-  `funds_raised_millions` int DEFAULT NULL,
-  `ROW_NUM` INT
+-- Step 5: Attempt to delete duplicates (CTE cannot be updated)
+DELETE FROM DUPLICATE_CTE WHERE ROW_NUM > 1;
+
+-- Step 6: Create a new table to store cleaned data
+CREATE TABLE layoffs_staging2 (
+    company TEXT,
+    location TEXT,
+    industry TEXT,
+    total_laid_off INT DEFAULT NULL,
+    percentage_laid_off TEXT,
+    `date` TEXT,
+    stage TEXT,
+    country TEXT,
+    funds_raised_millions INT DEFAULT NULL,
+    ROW_NUM INT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-SELECT * FROM LAYOFFS_STAGING2; -- INSERTED THE data from layoffs_staging with new column named ROW_NUM which was created in DUPLICATE_CTE since we have to remove duplicates.
-INSERT INTO LAYOFFS_STAGING2
+-- Step 7: Insert data with ROW_NUM for duplicate identification
+INSERT INTO layoffs_staging2
 SELECT *, ROW_NUMBER() OVER(PARTITION BY COMPANY, LOCATION, INDUSTRY, TOTAL_LAID_OFF, PERCENTAGE_LAID_OFF, `DATE`, 
 STAGE, COUNTRY, FUNDS_RAISED_MILLIONS) AS ROW_NUM
-FROM LAYOFFS_STAGING; -- This was the syntax of ROW_NUM column to find out duplicates, here we haven't copied the duplicate_cte but just the recipe of it.
+FROM LAYOFFS_STAGING;
 
-DELETE FROM LAYOFFS_STAGING2 -- Finnally deleted the duplicate rows that were > 1.
-WHERE ROW_NUM > 1;
+-- Step 8: Delete duplicate rows from LAYOFFS_STAGING2
+DELETE FROM layoffs_staging2 WHERE ROW_NUM > 1;
 
--- Standardizing a data
-SELECT * FROM LAYOFFS_STAGING2;
+-- Step 9: Standardizing the data
+-- Trim spaces from company names
+UPDATE LAYOFFS_STAGING2 SET COMPANY = TRIM(COMPANY);
 
-SELECT COMPANY FROM LAYOFFS_STAGING2;
-SELECT COMPANY, TRIM(COMPANY)
-FROM LAYOFFS_STAGING2;
+-- Clean country data
+UPDATE LAYOFFS_STAGING2 SET COUNTRY = REPLACE(COUNTRY, '.', '');
+UPDATE LAYOFFS_STAGING2 SET COUNTRY = TRIM(COUNTRY);
 
-UPDATE LAYOFFS_STAGING2
-SET COMPANY = TRIM(COMPANY);
+-- Standardize industry names
+UPDATE LAYOFFS_STAGING2 SET INDUSTRY = 'Crypto' WHERE INDUSTRY LIKE 'CRYPTO%';
 
-SELECT DISTINCT LOCATION
-FROM LAYOFFS_STAGING2
-ORDER BY 1;
+-- Step 10: Convert date formats
+SELECT `DATE`, STR_TO_DATE(`DATE`, '%m/%d/%Y') FROM LAYOFFS_STAGING2;
+UPDATE LAYOFFS_STAGING2 SET `DATE` = STR_TO_DATE(`DATE`, '%m/%d/%Y');
 
-SELECT DISTINCT COUNTRY
-FROM LAYOFFS_STAGING2
-ORDER BY 1;
+-- Modify date column to proper DATE type
+ALTER TABLE LAYOFFS_STAGING2 MODIFY COLUMN `DATE` DATE;
 
-UPDATE LAYOFFS_STAGING2
-SET COUNTRY  = REPLACE(COUNTRY, '.','');
+-- Step 11: Handle null and blank values
+-- Identify null or blank rows for cleanup
+SELECT * FROM LAYOFFS_STAGING2 WHERE INDUSTRY IS NULL OR INDUSTRY = '';
+SELECT * FROM LAYOFFS_STAGING2 WHERE TOTAL_LAID_OFF IS NULL OR TOTAL_LAID_OFF = '';
+SELECT * FROM LAYOFFS_STAGING2 WHERE PERCENTAGE_LAID_OFF IS NULL OR PERCENTAGE_LAID_OFF = '';
 
-UPDATE LAYOFFS_STAGING2
-SET COUNTRY = TRIM(COUNTRY);
+-- Delete rows with both TOTAL_LAID_OFF and PERCENTAGE_LAID_OFF null or blank
+DELETE FROM LAYOFFS_STAGING2 WHERE (TOTAL_LAID_OFF IS NULL OR TOTAL_LAID_OFF = '') AND (PERCENTAGE_LAID_OFF IS NULL OR PERCENTAGE_LAID_OFF = '');
 
-SELECT DISTINCT INDUSTRY FROM LAYOFFS_STAGING2
-ORDER BY 1;
+-- Step 12: Drop temporary ROW_NUM column
+ALTER TABLE LAYOFFS_STAGING2 DROP COLUMN ROW_NUM;
 
-UPDATE LAYOFFS_STAGING2
-SET INDUSTRY = 'Crypto'
-WHERE INDUSTRY LIKE 'CRYPTO%';
-
-SELECT `DATE`, str_to_date(`DATE`,'%m/%d/%Y') FROM LAYOFFS_STAGING2;
-
-UPDATE LAYOFFS_STAGING2
-SET `DATE` = str_to_date(`DATE`,'%m/%d/%Y');
-
-SELECT * FROM LAYOFFS_STAGING2;
-
-ALTER TABLE LAYOFFS_STAGING2
-MODIFY COLUMN `DATE` DATE;
-
--- Identifying the null and blank values, then deleting the not required rows
-SELECT * FROM LAYOFFS_STAGING2
-WHERE INDUSTRY IS NULL OR '';
-
-SELECT * FROM LAYOFFS_STAGING2
-WHERE TOTAL_LAID_OFF IS NULL OR '';
-
-SELECT * FROM LAYOFFS_STAGING2
-WHERE PERCENTAGE_LAID_OFF IS NULL OR '';
-
-SELECT * FROM LAYOFFS_STAGING2
-WHERE (TOTAL_LAID_OFF IS NULL OR '') AND (PERCENTAGE_LAID_OFF IS NULL OR '');
-
-DELETE FROM LAYOFFS_STAGING2
-WHERE (TOTAL_LAID_OFF IS NULL OR '') AND (PERCENTAGE_LAID_OFF IS NULL OR '');
-
-SELECT * FROM LAYOFFS_STAGING2;
-
-ALTER TABLE LAYOFFS_STAGING2
-DROP COLUMN ROW_NUM;
-
-UPDATE LAYOFFS_STAGING2
-SET INDUSTRY = NULL
-WHERE INDUSTRY = '';
-
-SELECT * 
-FROM LAYOFFS_STAGING2 STG0
-JOIN LAYOFFS_STAGING2 STG2
-ON STG0.COMPANY = STG2.COMPANY
-AND STG0.LOCATION = STG2.LOCATION
-WHERE STG0.INDUSTRY IS NULL 
-AND STG2.INDUSTRY IS NOT NULL;
-
+-- Step 13: Handle blank industries by matching rows with the same company and location
 UPDATE LAYOFFS_STAGING2 STG0
-JOIN LAYOFFS_STAGING2 STG2
-ON STG0.COMPANY = STG2.COMPANY 
+JOIN LAYOFFS_STAGING2 STG2 ON STG0.COMPANY = STG2.COMPANY
+AND STG0.LOCATION = STG2.LOCATION
 SET STG0.INDUSTRY = STG2.INDUSTRY
-WHERE STG0.INDUSTRY IS NULL 
-AND STG2.INDUSTRY IS NOT NULL;
+WHERE STG0.INDUSTRY IS NULL AND STG2.INDUSTRY IS NOT NULL;
 
+-- Step 14: Final clean-up
+UPDATE LAYOFFS_STAGING2 SET INDUSTRY = 'Gambling Facilities and Casinos' WHERE INDUSTRY IS NULL;
 
+-- Final table review
 SELECT * FROM LAYOFFS_STAGING2;
 
-UPDATE LAYOFFS_STAGING2
-SET INDUSTRY = 'Gambling Facilities and Casinos'
-WHERE INDUSTRY IS NULL;
 
 
 
