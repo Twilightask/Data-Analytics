@@ -1,17 +1,7 @@
 
 # Data Analysis using Python,SQL and Power BI
 
-This project showcases end-to-end data analytics starting from raw data collection to actionable insights through interactive visualizations. We analyze the Olympic medal data by performing:
-Data Cleaning: Removing inconsistencies and preparing data for analysis using Python's pandas and numpy libraries.
-
-Data Analysis: Leveraging MySQL to perform queries that provide insights into countries’ performance.
-
-Data Visualization: Using Power BI to present insights through rich, interactive visual dashboards.
-
-The primary focus of the project is to analyze medal counts by country, compare the performances, and provide visual insights.
-
-
-
+This repository showcases various data cleaning and analysis projects using MySQL, Python, and Excel. Each project focuses on handling missing values, removing duplicates, standardizing data formats, and optimizing datasets for accurate analysis. The goal is to ensure high-quality, structured data for better decision-making and insights.
 
 ## Installation
 
